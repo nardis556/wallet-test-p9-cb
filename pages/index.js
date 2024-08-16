@@ -20,6 +20,8 @@ const showToast = (toast, title, description, status) => {
   toast({ title, description, status, duration: 2000, isClosable: true });
 };
 
+// redep
+
 let ethereum;
 let provider;
 
