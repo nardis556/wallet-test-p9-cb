@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ethers, BrowserProvider } from 'ethers';
+import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chains';
 import { ChakraProvider, Box, VStack, Heading, Button, Image, Text, HStack, useToast, Table, Thead, Tbody, Tr, Th, Td, extendTheme } from '@chakra-ui/react';
-import CoinbaseWalletSDK from '@coinbase/wallet-sdk';
+import { EthereumProvider } from '@walletconnect/ethereum-provider';
 
 // Define the dark mode theme
 const theme = extendTheme({
@@ -12,8 +12,6 @@ const theme = extendTheme({
   },
 });
 
-// redep
-
 // Utility functions
 const sanitizeChainId = (chainId) =>
   typeof chainId === "string" ? parseInt(chainId, 16) : Number(chainId);
@@ -22,74 +20,10 @@ const showToast = (toast, title, description, status) => {
   toast({ title, description, status, duration: 2000, isClosable: true });
 };
 
-let ethereum;
-let provider;
-
-const performUnlockCoinbaseWallet = async () => {
-  console.log('[coinbaseWallet] Initialize WalletSDK');
-  const CoinbaseWalletSDK = (await import('@coinbase/wallet-sdk')).default;
-
-  // Initialize Coinbase Wallet SDK
-  const coinbaseWallet = new CoinbaseWalletSDK({
-    appName: 'IDEX',
-    appLogoUrl: 'https://exchange.idex.io/static/images/idex-logo-white.svg',
-  });
-
-  ethereum = coinbaseWallet.makeWeb3Provider();
-
-  console.log('[coinbaseWallet] Initialize', { ethereum });
-  provider = new ethers.BrowserProvider(ethereum);
-
-  const walletAddress = await ethereum
-    .request({ method: 'eth_requestAccounts' })
-    .then(accounts => {
-      const firstWallet = accounts[0];
-      console.log(`[coinbaseWallet] Found wallet ${firstWallet}`);
-      return firstWallet;
-    });
-
-  return walletAddress
-    ? {
-        publicKey: walletAddress,
-        ethereum,
-        provider,
-      }
-    : undefined;
-};
-
-let unlockingPromise;
-
-const unlockCoinbaseWallet = async () => {
-  unlockingPromise = unlockingPromise
-    ? unlockingPromise
-    : performUnlockCoinbaseWallet();
-  const unlockedWallet = await unlockingPromise;
-  unlockingPromise = undefined;
-  return unlockedWallet;
-};
-
-const removeCoinbaseWalletFromLocalStorage = () => {
-  if (ethereum?.disconnect) {
-    ethereum?.disconnect();
-  }
-  Object.keys(window.localStorage)
-    .filter(
-      key =>
-        key.includes('__WalletLink__') ||
-        key.includes('-coinbaseWallet:') ||
-        key.includes('-walletlink:')
-    )
-    .forEach(keyToRemove => localStorage.removeItem(keyToRemove));
-};
-
-const disconnectCoinbaseWallet = () => {
-  setTimeout(() => {
-    ethereum?.disconnect();
-    removeCoinbaseWalletFromLocalStorage();
-  }, 2000);
-};
+const projectId = 'dbe9fe1215dbe847681ac3dc99af6226'
 
 export default function Home() {
+  const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [address, setAddress] = useState('');
   const [chainId, setChainId] = useState(null);
@@ -110,7 +44,7 @@ export default function Home() {
     console.log("Initialize provider network:", network);
     setChainId(sanitizeChainId(network.chainId));
     return provider;
-  }, []);
+  }, [provider]);
 
   useEffect(() => {
     if (provider) initializeProvider();
@@ -119,46 +53,26 @@ export default function Home() {
   const connectWallet = async () => {
     setIsConnecting(true);
     try {
-      const unlockedWallet = await unlockCoinbaseWallet();
-      if (!unlockedWallet) {
-        throw new Error("Failed to unlock Coinbase Wallet");
-      }
-
-      const { publicKey, ethereum: eth, provider: prov } = unlockedWallet;
-      ethereum = eth;
-      provider = prov;
-
-      ethereum.on("accountsChanged", (accounts) => {
-        console.log('[coinbaseWallet] Account change detected', accounts);
-        const firstWallet = accounts[0];
-        if (firstWallet) {
-          setAddress(firstWallet);
-        }
+      const wcProvider = await EthereumProvider.init({
+        projectId,
+        chains: [1, 42161, 137], // mainnet, arbitrum, polygon
+        showQrModal: true
       });
 
-      ethereum.on("chainChanged", (chainIdHex) => {
-        const newChainId = sanitizeChainId(chainIdHex);
-        console.log('[coinbaseWallet] Chain change - rebuilding for', newChainId);
-        setChainId(newChainId);
-        if (ethereum) {
-          // no "any" fallback returns: Error: network changed: 42161 => 10  (event="changed", code=NETWORK_ERROR, version=6.9.0)
-          // provider = new ethers.BrowserProvider(ethereum);
-          provider = new ethers.BrowserProvider(ethereum);
-        } else {
-          console.error('[coinbaseWallet] Eth instance not available');
-        }
-      });
+      await wcProvider.enable();
 
-      const signer = await provider.getSigner();
-      const account = await signer.getAddress();
-      const network = await provider.getNetwork();
+      const ethersProvider = new ethers.BrowserProvider(wcProvider);
+      const signer = await ethersProvider.getSigner();
+      const address = await signer.getAddress();
+      const network = await ethersProvider.getNetwork();
 
+      setProvider(ethersProvider);
       setSigner(signer);
-      setAddress(account);
+      setAddress(address);
       setChainId(sanitizeChainId(network.chainId));
-      setSelectedWallet({ name: 'Coinbase Wallet', icon: 'https://upload.wikimedia.org/wikipedia/commons/e/e9/Felis_silvestris_silvestris_small_gradual_decrease_of_quality.png' });
+      setSelectedWallet({ name: 'WalletConnect', icon: 'https://image.pngaaa.com/296/6917296-middle.png' });
 
-      showSuccessToast("Wallet Connected", `Connected to account ${account.slice(0, 6)}...${account.slice(-4)}`);
+      showSuccessToast("Wallet Connected", `Connected to account ${address.slice(0, 6)}...${address.slice(-4)}`);
     } catch (error) {
       console.error('Error connecting wallet:', error);
       showErrorToast("Connection Error", "Failed to connect wallet. Please try again.");
@@ -167,14 +81,21 @@ export default function Home() {
     }
   };
 
-  const disconnectWallet = () => {
-    disconnectCoinbaseWallet();
-    provider = null;
-    setSigner(null);
-    setAddress('');
-    setSelectedWallet(null);
-    setChainId(null);
-    showToast(toast, "Wallet Disconnected", "Your wallet has been disconnected.", "info");
+  const disconnectWallet = async () => {
+    try {
+      if (provider && provider.disconnect) {
+        await provider.disconnect();
+      }
+      setProvider(null);
+      setSigner(null);
+      setAddress('');
+      setSelectedWallet(null);
+      setChainId(null);
+      showToast(toast, "Wallet Disconnected", "Your wallet has been disconnected.", "info");
+    } catch (error) {
+      console.error('Error disconnecting wallet:', error);
+      showErrorToast("Disconnection Error", "Failed to disconnect wallet. Please try again.");
+    }
   };
 
   const switchChain = async (chainName) => {
@@ -187,50 +108,11 @@ export default function Home() {
     }
 
     const targetChainId = sanitizeChainId(chainConfig.chainId);
-    const formattedChainId = `0x${targetChainId.toString(16)}`;
-
-    console.log(`Attempting to switch to network: ${chainName} (${formattedChainId})`);
 
     try {
-      if (chainId === targetChainId) {
-        console.log(`Already on the correct chain: ${chainConfig.chainName}`);
-        setIsSwitchingChain(false);
-        return;
-      }
-
-      if (!ethereum) {
-        throw new Error("No provider available. Please connect a wallet first.");
-      }
-
-      try {
-        await ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: formattedChainId }],
-        });
-      } catch (switchError) {
-        if (switchError.code === 4902) {
-          try {
-            await addNetwork(chainConfig, formattedChainId);
-          } catch (addError) {
-            throw addError;
-          }
-        } else {
-          throw switchError;
-        }
-      }
-
-      console.log(`Switched to chain: ${formattedChainId}`);
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const newProvider = await initializeProvider();
-      const newSigner = await newProvider.getSigner();
-      setSigner(newSigner);
-      const newChainId = await newProvider.getNetwork().then(network => sanitizeChainId(network.chainId));
-      setChainId(newChainId);
-
-      console.log(`Provider re-initialized after chain switch. New chain ID: ${newChainId}`);
-
+      await provider.send('wallet_switchEthereumChain', [{ chainId: `0x${targetChainId.toString(16)}` }]);
+      const newChainId = await provider.send('eth_chainId', []);
+      setChainId(sanitizeChainId(newChainId));
       showSuccessToast("Network Switched", `Switched to ${chainConfig.chainName}`);
     } catch (error) {
       console.error(`Error switching network:`, error);
@@ -238,26 +120,6 @@ export default function Home() {
     } finally {
       setIsSwitchingChain(false);
     }
-  };
-
-  const addNetwork = async (chainConfig, formattedChainId) => {
-    const params = [{
-      chainId: formattedChainId,
-      chainName: chainConfig.chainName,
-      nativeCurrency: chainConfig.nativeCurrency,
-      rpcUrls: chainConfig.rpcUrls,
-      blockExplorerUrls: chainConfig.blockExplorerUrls
-    }];
-
-    if (ethereum) {
-      await ethereum.request({
-        method: "wallet_addEthereumChain",
-        params: params
-      });
-    } else {
-      throw new Error("No provider available");
-    }
-    console.log(`Added network: ${chainConfig.chainName}`);
   };
 
   const sendTransaction = async (chainName) => {
@@ -269,24 +131,8 @@ export default function Home() {
 
       const targetChainId = sanitizeChainId(chainConfig.chainId);
 
-      console.log(`Preparing to send transaction on ${chainName} (Chain ID: ${targetChainId})`);
-      console.log(`Current chain ID: ${chainId}`);
-
       if (chainId !== targetChainId) {
-        console.log(`Chain mismatch. Switching to ${chainName}...`);
         await switchChain(chainName);
-
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const newProvider = await initializeProvider();
-        const newSigner = await newProvider.getSigner();
-        setSigner(newSigner);
-
-        const currentChainId = await newProvider.getNetwork().then(network => sanitizeChainId(network.chainId));
-        console.log(`After switch: Current chain ID: ${currentChainId}, Target chain ID: ${targetChainId}`);
-        if (currentChainId !== targetChainId) {
-          throw new Error(`Failed to switch to the correct chain. Expected ${targetChainId}, got ${currentChainId}`);
-        }
       }
 
       const address = await signer.getAddress();
@@ -294,18 +140,14 @@ export default function Home() {
 
       let transaction = {
         to: address,
-        value: ethers.parseEther("0"),
+        value: ethers.utils.parseEther("0"),
         nonce: nonce,
         data: "0x",
         chainId: targetChainId,
       };
 
-      console.log(`Sending transaction:`, transaction);
-
       const tx = await signer.sendTransaction(transaction);
-      console.log(`Transaction sent:`, tx.hash);
       const receipt = await tx.wait();
-      console.log(`Transaction confirmed on ${chainName}:`, receipt.hash);
       showSuccessToast("Transaction Sent", `Transaction successfully sent on ${chainName}`);
     } catch (error) {
       console.error('Error sending transaction:', error);
@@ -317,7 +159,23 @@ export default function Home() {
 
   const clearLocalStorageAndRefresh = () => {
     setIsClearing(true);
+    
     localStorage.clear();
+    
+    sessionStorage.clear();
+    
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c
+        .replace(/^ +/, "")
+        .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+    
+    window.indexedDB.databases().then((dbs) => {
+      dbs.forEach((db) => {
+        window.indexedDB.deleteDatabase(db.name);
+      });
+    });
+    
     if ('caches' in window) {
       caches.keys().then((names) => {
         names.forEach((name) => {
@@ -325,7 +183,8 @@ export default function Home() {
         });
       });
     }
-    showSuccessToast("Storage Cleared", "Local storage and cache have been cleared.");
+    
+    showSuccessToast("Storage Cleared", "All browser storage for this site has been cleared.");
     setTimeout(() => {
       window.location.reload(true);
     }, 1000);
@@ -348,7 +207,7 @@ export default function Home() {
                   isLoading={isConnecting}
                   loadingText="Connecting"
                 >
-                  Connect with Coinbase Wallet
+                  Connect with WalletConnect
                 </Button>
               </VStack>
             </Box>

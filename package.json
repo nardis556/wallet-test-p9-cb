@@ -12,9 +12,12 @@
     "@chakra-ui/react": "^2.8.2",
     "@coinbase/wallet-sdk": "^4.0.4",
     "@walletconnect/ethereum-provider": "^2.15.0",
+    "@web3modal/ethereum": "^2.7.1",
+    "@web3modal/react": "^2.7.1",
     "ethers": "^6.9.0",
     "next": "14.2.5",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "wagmi": "^2.12.5"
   }
 }
