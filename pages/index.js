@@ -317,7 +317,23 @@ export default function Home() {
 
   const clearLocalStorageAndRefresh = () => {
     setIsClearing(true);
+    
     localStorage.clear();
+    
+    sessionStorage.clear();
+    
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c
+        .replace(/^ +/, "")
+        .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+    
+    window.indexedDB.databases().then((dbs) => {
+      dbs.forEach((db) => {
+        window.indexedDB.deleteDatabase(db.name);
+      });
+    });
+    
     if ('caches' in window) {
       caches.keys().then((names) => {
         names.forEach((name) => {
@@ -325,7 +341,8 @@ export default function Home() {
         });
       });
     }
-    showSuccessToast("Storage Cleared", "Local storage and cache have been cleared.");
+    
+    showSuccessToast("Storage Cleared", "All browser storage for this site has been cleared.");
     setTimeout(() => {
       window.location.reload(true);
     }, 1000);
