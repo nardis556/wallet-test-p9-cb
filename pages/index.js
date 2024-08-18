@@ -38,7 +38,7 @@ const performUnlockCoinbaseWallet = async () => {
   ethereum = coinbaseWallet.makeWeb3Provider();
 
   console.log('[coinbaseWallet] Initialize', { ethereum });
-  provider = new ethers.BrowserProvider(ethereum);
+  provider = new ethers.BrowserProvider(ethereum, "any");
 
   const walletAddress = await ethereum
     .request({ method: 'eth_requestAccounts' })
@@ -142,7 +142,7 @@ export default function Home() {
         setChainId(newChainId);
         if (ethereum) {
           // no "any" fallback returns: Error: network changed: 42161 => 10  (event="changed", code=NETWORK_ERROR, version=6.9.0)
-          provider = new ethers.BrowserProvider(ethereum);
+          provider = new ethers.BrowserProvider(ethereum, "any");
           // provider = new ethers.BrowserProvider(ethereum, "any");
         } else {
           console.error('[coinbaseWallet] Eth instance not available');
