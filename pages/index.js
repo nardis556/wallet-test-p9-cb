@@ -12,6 +12,8 @@ const theme = extendTheme({
   },
 });
 
+// redep
+
 // Utility functions
 const sanitizeChainId = (chainId) =>
   typeof chainId === "string" ? parseInt(chainId, 16) : Number(chainId);
@@ -141,7 +143,7 @@ export default function Home() {
         if (ethereum) {
           // no "any" fallback returns: Error: network changed: 42161 => 10  (event="changed", code=NETWORK_ERROR, version=6.9.0)
           // provider = new ethers.BrowserProvider(ethereum);
-          provider = new ethers.BrowserProvider(ethereum, "any");
+          provider = new ethers.BrowserProvider(ethereum);
         } else {
           console.error('[coinbaseWallet] Eth instance not available');
         }
@@ -315,7 +317,23 @@ export default function Home() {
 
   const clearLocalStorageAndRefresh = () => {
     setIsClearing(true);
+    
     localStorage.clear();
+    
+    sessionStorage.clear();
+    
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c
+        .replace(/^ +/, "")
+        .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+    
+    window.indexedDB.databases().then((dbs) => {
+      dbs.forEach((db) => {
+        window.indexedDB.deleteDatabase(db.name);
+      });
+    });
+    
     if ('caches' in window) {
       caches.keys().then((names) => {
         names.forEach((name) => {
@@ -323,7 +341,8 @@ export default function Home() {
         });
       });
     }
-    showSuccessToast("Storage Cleared", "Local storage and cache have been cleared.");
+    
+    showSuccessToast("Storage Cleared", "All browser storage for this site has been cleared.");
     setTimeout(() => {
       window.location.reload(true);
     }, 1000);
